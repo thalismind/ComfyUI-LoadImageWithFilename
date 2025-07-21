@@ -400,30 +400,21 @@ class CropImageByMask:
         img_np = image.cpu().numpy()
         mask_np = mask.cpu().numpy()
 
-        # Find the bounding box of black pixels (0.0) in the mask
-        # We want to exclude white pixels (1.0), so we look for where mask == 0
-        black_pixels = (mask_np == 0)
+        # Find the largest rectangle that contains only black pixels (0.0) and no white pixels (1.0)
+        # Use a more efficient approach based on finding the largest rectangle in a binary matrix
+        # where 0 = black (keep), 1 = white (exclude)
 
-        if not np.any(black_pixels):
-            # If no black pixels, return the original image
+        # Create a binary matrix where 0 = black pixels (valid), 1 = white pixels (invalid)
+        binary_matrix = (mask_np == 1).astype(int)  # 1 for white pixels, 0 for black pixels
+
+        # Find the largest rectangle of 0s (black pixels)
+        max_area, best_coords = self._largest_rectangle_of_zeros(binary_matrix)
+
+        if max_area == 0:
+            # No valid rectangle found, return original
             return image, mask
 
-        # Find the bounding box - we need to find the first and last rows/cols that have black pixels
-        # For rows: find first row with any black pixels and last row with any black pixels
-        # For cols: find first col with any black pixels and last col with any black pixels
-        rows_with_black = np.any(black_pixels, axis=1)
-        cols_with_black = np.any(black_pixels, axis=0)
-
-        # Find the first and last rows/cols that have black pixels
-        row_indices = np.where(rows_with_black)[0]
-        col_indices = np.where(cols_with_black)[0]
-
-        if len(row_indices) == 0 or len(col_indices) == 0:
-            # No black pixels found, return original
-            return image, mask
-
-        y_min, y_max = row_indices[0], row_indices[-1]
-        x_min, x_max = col_indices[0], col_indices[-1]
+        y_min, y_max, x_min, x_max = best_coords
 
         # Crop the image and mask
         cropped_img = img_np[y_min:y_max+1, x_min:x_max+1]
@@ -434,6 +425,47 @@ class CropImageByMask:
         cropped_mask_tensor = torch.from_numpy(cropped_mask).float()
 
         return cropped_img_tensor, cropped_mask_tensor
+
+    def _largest_rectangle_of_zeros(self, matrix):
+        """Find the largest rectangle containing only 0s in a binary matrix."""
+        if not matrix.size:
+            return 0, (0, 0, 0, 0)
+
+        rows, cols = matrix.shape
+        max_area = 0
+        best_coords = (0, 0, 0, 0)
+
+        # For each cell, find the largest rectangle with this cell as the top-left corner
+        for i in range(rows):
+            for j in range(cols):
+                if matrix[i][j] == 0:  # Only start from 0s
+                    # Find the maximum width and height for this starting position
+                    max_width = cols - j
+                    max_height = rows - i
+
+                    # Find the actual width (how many consecutive 0s to the right)
+                    width = 0
+                    for k in range(j, cols):
+                        if matrix[i][k] == 0:
+                            width += 1
+                        else:
+                            break
+
+                    # Find the maximum height for this width
+                    height = 0
+                    for k in range(i, rows):
+                        # Check if this row has 0s from j to j+width-1
+                        if j + width <= cols and np.all(matrix[k][j:j+width] == 0):
+                            height += 1
+                        else:
+                            break
+
+                    area = width * height
+                    if area > max_area:
+                        max_area = area
+                        best_coords = (i, i + height - 1, j, j + width - 1)
+
+        return max_area, best_coords
 
     @classmethod
     def IS_CHANGED(s, image, mask, **kwargs):
