@@ -270,8 +270,17 @@ class SaveImageWithFilename:
         # Parse filenames - handle both single filename and comma-separated list
         filename_list = []
         if filenames:
-            # Split by comma and strip whitespace
-            filename_list = [f.strip() for f in filenames.split(",") if f.strip()]
+            # Handle both string and list inputs
+            if isinstance(filenames, str):
+                # Split by comma and strip whitespace
+                filename_list = [f.strip() for f in filenames.split(",") if f.strip()]
+            elif isinstance(filenames, list):
+                # Already a list, just use it
+                filename_list = [str(f).strip() for f in filenames if f]
+            else:
+                # Convert to string and try to split
+                filename_str = str(filenames)
+                filename_list = [f.strip() for f in filename_str.split(",") if f.strip()]
 
         # If no filenames provided or not enough filenames, use default naming
         if not filename_list or len(filename_list) < len(images):
@@ -341,14 +350,3 @@ class SaveImageWithFilename:
     @classmethod
     def IS_CHANGED(s, images, filenames, filename_prefix, **kwargs):
         return hashlib.sha256(str(images).encode()).hexdigest()
-
-    @classmethod
-    def VALIDATE_INPUTS(s, images, filenames, filename_prefix):
-        if images is None:
-            return "No images provided"
-        if hasattr(images, 'shape'):
-            if len(images.shape) == 0 or images.shape[0] == 0:
-                return "No images provided"
-        elif not images:
-            return "No images provided"
-        return True
