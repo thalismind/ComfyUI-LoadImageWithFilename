@@ -91,10 +91,8 @@ class LoadImageWithFilename:
 class LoadImageFolder:
     @classmethod
     def INPUT_TYPES(s):
-        input_dir = folder_paths.get_input_directory()
-        folders = [f for f in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, f))]
         return {"required":
-                    {"folder": (sorted(folders),)},
+                    {"folder_path": ("STRING", {"default": "", "multiline": False})},
                 }
 
     CATEGORY = "image"
@@ -103,9 +101,18 @@ class LoadImageFolder:
     RETURN_NAMES = ("image", "mask", "filenames")
     FUNCTION = "load_folder"
 
-    def load_folder(self, folder):
-        input_dir = folder_paths.get_input_directory()
-        folder_path = os.path.join(input_dir, folder)
+    def load_folder(self, folder_path):
+        # If no path provided, return empty tensors
+        if not folder_path or not os.path.exists(folder_path):
+            empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+            return (empty_image, empty_mask, "")
+
+        # Check if it's a directory
+        if not os.path.isdir(folder_path):
+            empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+            return (empty_image, empty_mask, "")
 
         # Get all image files in the folder
         image_files = []
@@ -198,30 +205,31 @@ class LoadImageFolder:
         return (combined_images, combined_masks, filenames_str)
 
     @classmethod
-    def IS_CHANGED(s, folder):
-        input_dir = folder_paths.get_input_directory()
-        folder_path = os.path.join(input_dir, folder)
-        if not os.path.exists(folder_path):
+    def IS_CHANGED(s, folder_path):
+        if not folder_path or not os.path.exists(folder_path):
             return "INVALID"
 
         # Create a hash based on folder contents
         m = hashlib.sha256()
-        for file in sorted(os.listdir(folder_path)):
-            file_path = os.path.join(folder_path, file)
-            if os.path.isfile(file_path):
-                try:
-                    with open(file_path, 'rb') as f:
-                        m.update(f.read())
-                except:
-                    continue
+        try:
+            for file in sorted(os.listdir(folder_path)):
+                file_path = os.path.join(folder_path, file)
+                if os.path.isfile(file_path):
+                    try:
+                        with open(file_path, 'rb') as f:
+                            m.update(f.read())
+                    except:
+                        continue
+        except:
+            return "INVALID"
         return m.digest().hex()
 
     @classmethod
-    def VALIDATE_INPUTS(s, folder):
-        input_dir = folder_paths.get_input_directory()
-        folder_path = os.path.join(input_dir, folder)
+    def VALIDATE_INPUTS(s, folder_path):
+        if not folder_path:
+            return "Empty path provided"
         if not os.path.exists(folder_path):
-            return "Invalid folder: {}".format(folder)
+            return "Path does not exist: {}".format(folder_path)
         if not os.path.isdir(folder_path):
-            return "Not a directory: {}".format(folder)
+            return "Not a directory: {}".format(folder_path)
         return True
