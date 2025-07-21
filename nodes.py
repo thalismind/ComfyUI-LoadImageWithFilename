@@ -2,7 +2,9 @@ import os
 import hashlib
 import torch
 import numpy as np
+import json
 from PIL import Image, ImageOps, ImageSequence
+from PIL.PngImagePlugin import PngInfo
 import folder_paths
 import node_helpers
 
@@ -231,4 +233,117 @@ class LoadImageFolder:
             return "Path does not exist: {}".format(folder_path)
         if not os.path.isdir(folder_path):
             return "Not a directory: {}".format(folder_path)
+        return True
+
+
+class SaveImageWithFilename:
+    def __init__(self):
+        self.output_dir = folder_paths.get_output_directory()
+        self.type = "output"
+        self.prefix_append = ""
+        self.compress_level = 4
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "images": ("IMAGE", {"tooltip": "The images to save."}),
+                "filenames": ("STRING", {"default": "", "tooltip": "Single filename or comma-separated list of filenames. If empty, will use default naming."}),
+                "filename_prefix": ("STRING", {"default": "ComfyUI", "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."})
+            },
+            "hidden": {
+                "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"
+            },
+        }
+
+    RETURN_TYPES = ()
+    FUNCTION = "save_images"
+
+    OUTPUT_NODE = True
+
+    CATEGORY = "image"
+    DESCRIPTION = "Saves the input images with specified filenames to your ComfyUI output directory."
+
+    def save_images(self, images, filenames="", filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
+        filename_prefix += self.prefix_append
+
+        # Parse filenames - handle both single filename and comma-separated list
+        filename_list = []
+        if filenames:
+            # Split by comma and strip whitespace
+            filename_list = [f.strip() for f in filenames.split(",") if f.strip()]
+
+        # If no filenames provided or not enough filenames, use default naming
+        if not filename_list or len(filename_list) < len(images):
+            # Use default naming for remaining images
+            full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
+
+            results = list()
+            for (batch_number, image) in enumerate(images):
+                i = 255. * image.cpu().numpy()
+                img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+                metadata = None
+                metadata = PngInfo()
+                if prompt is not None:
+                    metadata.add_text("prompt", json.dumps(prompt))
+                if extra_pnginfo is not None:
+                    for x in extra_pnginfo:
+                        metadata.add_text(x, json.dumps(extra_pnginfo[x]))
+
+                # Use provided filename if available, otherwise use default naming
+                if batch_number < len(filename_list):
+                    # Use the provided filename
+                    provided_filename = filename_list[batch_number]
+                    # Remove extension if present and add .png
+                    base_name = os.path.splitext(provided_filename)[0]
+                    file = f"{base_name}.png"
+                else:
+                    # Use default naming
+                    filename_with_batch_num = filename.replace("%batch_num%", str(batch_number))
+                    file = f"{filename_with_batch_num}_{counter:05}_.png"
+
+                img.save(os.path.join(full_output_folder, file), pnginfo=metadata, compress_level=self.compress_level)
+                results.append({
+                    "filename": file,
+                    "subfolder": subfolder,
+                    "type": self.type
+                })
+        else:
+            # Use provided filenames for all images
+            results = list()
+            for (batch_number, image) in enumerate(images):
+                i = 255. * image.cpu().numpy()
+                img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+                metadata = None
+                metadata = PngInfo()
+                if prompt is not None:
+                    metadata.add_text("prompt", json.dumps(prompt))
+                if extra_pnginfo is not None:
+                    for x in extra_pnginfo:
+                        metadata.add_text(x, json.dumps(extra_pnginfo[x]))
+
+                # Use the provided filename
+                provided_filename = filename_list[batch_number]
+                # Remove extension if present and add .png
+                base_name = os.path.splitext(provided_filename)[0]
+                file = f"{base_name}.png"
+
+                # Save to output directory
+                img.save(os.path.join(self.output_dir, file), pnginfo=metadata, compress_level=self.compress_level)
+                results.append({
+                    "filename": file,
+                    "subfolder": "",
+                    "type": self.type
+                })
+
+        return {"ui": {"images": results}}
+
+    @classmethod
+    def IS_CHANGED(s, images, filenames, filename_prefix):
+        return hashlib.sha256(str(images).encode()).hexdigest()
+
+    @classmethod
+    def VALIDATE_INPUTS(s, images, filenames, filename_prefix):
+        if not images:
+            return "No images provided"
         return True
