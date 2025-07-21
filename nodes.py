@@ -200,9 +200,8 @@ class LoadImageFolder:
         # Concatenate all images and masks
         combined_images = torch.cat(all_images, dim=0)
         combined_masks = torch.cat(all_masks, dim=0)
-        filenames_str = ",".join(all_filenames)
 
-        return (combined_images, combined_masks, filenames_str)
+        return (combined_images, combined_masks, all_filenames)
 
     @classmethod
     def IS_CHANGED(s, folder_path):
