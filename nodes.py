@@ -339,11 +339,16 @@ class SaveImageWithFilename:
         return {"ui": {"images": results}}
 
     @classmethod
-    def IS_CHANGED(s, images, filenames, filename_prefix):
+    def IS_CHANGED(s, images, filenames, filename_prefix, **kwargs):
         return hashlib.sha256(str(images).encode()).hexdigest()
 
     @classmethod
     def VALIDATE_INPUTS(s, images, filenames, filename_prefix):
-        if not images:
+        if images is None:
+            return "No images provided"
+        if hasattr(images, 'shape'):
+            if len(images.shape) == 0 or images.shape[0] == 0:
+                return "No images provided"
+        elif not images:
             return "No images provided"
         return True
