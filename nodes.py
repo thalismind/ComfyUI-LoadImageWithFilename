@@ -350,3 +350,81 @@ class SaveImageWithFilename:
     @classmethod
     def IS_CHANGED(s, images, filenames, filename_prefix, **kwargs):
         return hashlib.sha256(str(images).encode()).hexdigest()
+
+
+class CropImageByMask:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE", {"tooltip": "The image to crop"}),
+                "mask": ("MASK", {"tooltip": "The mask to use for cropping. White pixels (1.0) will be excluded, black pixels (0.0) will be included."})
+            }
+        }
+
+    CATEGORY = "image"
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("image", "mask")
+    FUNCTION = "crop_by_mask"
+    DESCRIPTION = "Crops an image based on its mask, keeping only areas with black pixels (0.0) in the mask and excluding white pixels (1.0)."
+
+    def crop_by_mask(self, image, mask):
+        # Ensure mask is binary (0.0 or 1.0)
+        if mask.dim() == 2:
+            # Single mask
+            binary_mask = (mask > 0.5).float()
+            return self._crop_single_image(image, binary_mask)
+        else:
+            # Batch of masks
+            cropped_images = []
+            cropped_masks = []
+
+            for i in range(mask.shape[0]):
+                single_mask = mask[i]
+                single_image = image[i] if image.shape[0] > 1 else image[0]
+
+                binary_mask = (single_mask > 0.5).float()
+                cropped_img, cropped_mask = self._crop_single_image(single_image, binary_mask)
+
+                cropped_images.append(cropped_img)
+                cropped_masks.append(cropped_mask)
+
+            # Stack results
+            if len(cropped_images) > 1:
+                return (torch.stack(cropped_images, dim=0), torch.stack(cropped_masks, dim=0))
+            else:
+                return (cropped_images[0].unsqueeze(0), cropped_masks[0].unsqueeze(0))
+
+    def _crop_single_image(self, image, mask):
+        # Convert to numpy for easier manipulation
+        img_np = image.cpu().numpy()
+        mask_np = mask.cpu().numpy()
+
+        # Find the bounding box of black pixels (0.0) in the mask
+        # We want to exclude white pixels (1.0), so we look for where mask == 0
+        black_pixels = (mask_np == 0)
+
+        if not np.any(black_pixels):
+            # If no black pixels, return the original image
+            return image, mask
+
+        # Find the bounding box
+        rows = np.any(black_pixels, axis=1)
+        cols = np.any(black_pixels, axis=0)
+
+        y_min, y_max = np.where(rows)[0][[0, -1]]
+        x_min, x_max = np.where(cols)[0][[0, -1]]
+
+        # Crop the image and mask
+        cropped_img = img_np[y_min:y_max+1, x_min:x_max+1]
+        cropped_mask = mask_np[y_min:y_max+1, x_min:x_max+1]
+
+        # Convert back to torch tensors
+        cropped_img_tensor = torch.from_numpy(cropped_img).float()
+        cropped_mask_tensor = torch.from_numpy(cropped_mask).float()
+
+        return cropped_img_tensor, cropped_mask_tensor
+
+    @classmethod
+    def IS_CHANGED(s, image, mask, **kwargs):
+        return hashlib.sha256(str(image).encode() + str(mask).encode()).hexdigest()
