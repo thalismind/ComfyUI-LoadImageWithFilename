@@ -408,12 +408,22 @@ class CropImageByMask:
             # If no black pixels, return the original image
             return image, mask
 
-        # Find the bounding box
-        rows = np.any(black_pixels, axis=1)
-        cols = np.any(black_pixels, axis=0)
+        # Find the bounding box - we need to find the first and last rows/cols that have black pixels
+        # For rows: find first row with any black pixels and last row with any black pixels
+        # For cols: find first col with any black pixels and last col with any black pixels
+        rows_with_black = np.any(black_pixels, axis=1)
+        cols_with_black = np.any(black_pixels, axis=0)
 
-        y_min, y_max = np.where(rows)[0][[0, -1]]
-        x_min, x_max = np.where(cols)[0][[0, -1]]
+        # Find the first and last rows/cols that have black pixels
+        row_indices = np.where(rows_with_black)[0]
+        col_indices = np.where(cols_with_black)[0]
+
+        if len(row_indices) == 0 or len(col_indices) == 0:
+            # No black pixels found, return original
+            return image, mask
+
+        y_min, y_max = row_indices[0], row_indices[-1]
+        x_min, x_max = col_indices[0], col_indices[-1]
 
         # Crop the image and mask
         cropped_img = img_np[y_min:y_max+1, x_min:x_max+1]
